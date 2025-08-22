@@ -4,27 +4,42 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { tab, PlayerID, RVS, CRANK, Tier, CrankNotes } = req.body;
+    const { tab, PlayerID, RVS, CRANK, Tier, CrankNotes, updates } = req.body;
 
     // ✅ Only allow RVS_Input for safety
     if (tab !== "RVS_Input") {
       return res.status(403).json({ error: "Unauthorized tab access" });
     }
 
-    // Build payload for GAS WebApp
-    const update = { PlayerID, RVS, CRANK, Tier, CrankNotes };
+    // Build a uniform array of updates (whether single or batch)
+    let updateArray = [];
+    if (updates && Array.isArray(updates)) {
+      updateArray = updates;
+    } else {
+      updateArray = [{ PlayerID, RVS, CRANK, Tier, CrankNotes }];
+    }
 
-    const gasRes = await fetch(process.env.GAS_WEBAPP_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "commitRVSInput",
-        update
-      })
-    });
+    const results = [];
+    for (const update of updateArray) {
+      if (!update.PlayerID) {
+        results.push({ ok: false, error: "Missing PlayerID" });
+        continue;
+      }
 
-    const json = await gasRes.json();
-    res.status(200).json(json);
+      const gasRes = await fetch(process.env.GAS_WEBAPP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "commitRVSInput",
+          update
+        })
+      });
+
+      const json = await gasRes.json();
+      results.push(json);
+    }
+
+    res.status(200).json({ ok: true, results });
 
   } catch (err) {
     console.error("Commit failed", err);
